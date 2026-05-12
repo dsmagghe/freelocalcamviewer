@@ -39,6 +39,8 @@ Open <http://your-pi.local:8088>.
 ### Without Docker
 
 Requirements: Node.js 18+ and a C toolchain for `better-sqlite3`.
+Optional but recommended: `ffmpeg` (enables RTSP-grab fallback when a
+camera's HTTP API session pool is saturated).
 
 ```bash
 git clone https://github.com/<you>/freelocalcamviewer.git
@@ -46,6 +48,20 @@ cd freelocalcamviewer
 npm install
 node server.js
 ```
+
+### Auto-start on macOS (LaunchAgent)
+
+```bash
+brew install node ffmpeg     # if not already installed
+git clone https://github.com/<you>/freelocalcamviewer.git
+cd freelocalcamviewer
+npm install
+scripts/install-mac.sh 8088  # port is optional, defaults to 8088
+```
+
+The app now boots with your user session, restarts on crash, and writes
+logs to `data/launchd.{out,err}.log`. Re-run the installer with a
+different port number to change ports. Remove with `scripts/uninstall-mac.sh`.
 
 On a Raspberry Pi running Debian/Ubuntu:
 

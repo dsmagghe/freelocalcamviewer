@@ -14,10 +14,22 @@
     </div>
     <div class="actions">
       <label class="cols">
-        Columns
-        <select id="cols">
-          <option>1</option><option>2</option><option selected>3</option>
-          <option>4</option><option>5</option><option>6</option>
+        Layout
+        <select id="layout">
+          <optgroup label="Equal grid">
+            <option value="cols-1">1 column</option>
+            <option value="cols-2">2 columns</option>
+            <option value="cols-3" selected>3 columns</option>
+            <option value="cols-4">4 columns</option>
+            <option value="cols-5">5 columns</option>
+            <option value="cols-6">6 columns</option>
+          </optgroup>
+          <optgroup label="Featured">
+            <option value="featured-1">1 large + grid</option>
+            <option value="featured-2">2 large + grid</option>
+            <option value="featured-4">4 large + grid</option>
+            <option value="cinema">Cinema (1 huge + side)</option>
+          </optgroup>
         </select>
       </label>
       <button id="btn-discover">Scan LAN</button>

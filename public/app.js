@@ -1,6 +1,6 @@
 const grid = document.getElementById('grid');
 const camCount = document.getElementById('cam-count');
-const colsSel = document.getElementById('cols');
+const layoutSel = document.getElementById('layout');
 
 const state = {
   cameras: [],
@@ -8,7 +8,7 @@ const state = {
   timers: new Map(),
 };
 
-const COLS_KEY = 'flcv:cols';
+const LAYOUT_KEY = 'flcv:layout';
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -24,9 +24,9 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
-function setCols(n) {
-  grid.className = 'grid cols-' + n;
-  localStorage.setItem(COLS_KEY, String(n));
+function setLayout(name) {
+  grid.className = 'grid ' + name;
+  localStorage.setItem(LAYOUT_KEY, name);
 }
 
 function startTile(cam) {
@@ -107,7 +107,10 @@ function tileEl(cam) {
   tile.draggable = false;
   tile.innerHTML = `
     <img id="img-${cam.id}" alt="${escapeHtml(cam.name)}" />
-    <div class="label"><span class="dot ${cam.enabled ? 'ok' : ''}"></span>${escapeHtml(cam.name)}</div>
+    <div class="label">
+      <span class="dot ${cam.enabled ? 'ok' : ''}"></span>
+      <span class="name" contenteditable="true" spellcheck="false">${escapeHtml(cam.name)}</span>
+    </div>
     <div class="stamp" id="stamp-${cam.id}">—</div>
     <div class="tools">
       <button data-act="toggle">${cam.enabled ? 'Pause' : 'Play'}</button>
@@ -115,6 +118,24 @@ function tileEl(cam) {
       <button data-act="delete" class="danger">Del</button>
     </div>
   `;
+  const nameEl = tile.querySelector('.name');
+  nameEl.addEventListener('click', (e) => e.stopPropagation());
+  nameEl.addEventListener('dblclick', (e) => e.stopPropagation());
+  nameEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); nameEl.blur(); }
+    if (e.key === 'Escape') { nameEl.textContent = cam.name; nameEl.blur(); }
+  });
+  nameEl.addEventListener('blur', async () => {
+    const next = nameEl.textContent.trim();
+    if (!next || next === cam.name) { nameEl.textContent = cam.name; return; }
+    try {
+      const updated = await api(`/api/cameras/${cam.id}`, { method: 'PATCH', body: { name: next } });
+      cam.name = updated.name;
+    } catch (err) {
+      nameEl.textContent = cam.name;
+      alert('Rename failed: ' + err.message);
+    }
+  });
   tile.querySelector('[data-act="edit"]').addEventListener('click', () => openEdit(cam));
   tile.querySelector('[data-act="toggle"]').addEventListener('click', async () => {
     const next = await api(`/api/cameras/${cam.id}`, { method: 'PATCH', body: { enabled: !cam.enabled } });
@@ -527,10 +548,17 @@ document.getElementById('btn-add').addEventListener('click', async () => {
 });
 document.getElementById('btn-edit-mode').addEventListener('click', toggleEditMode);
 
-colsSel.addEventListener('change', () => setCols(colsSel.value));
-const storedCols = localStorage.getItem(COLS_KEY) || '3';
-colsSel.value = storedCols;
-setCols(storedCols);
+layoutSel.addEventListener('change', () => setLayout(layoutSel.value));
+const storedLayout = localStorage.getItem(LAYOUT_KEY) || 'cols-3';
+// Defensive: fall back to cols-3 if the stored value isn't one of the options
+// (e.g. someone migrated from a version that only knew "3").
+if ([...layoutSel.options].some((o) => o.value === storedLayout)) {
+  layoutSel.value = storedLayout;
+  setLayout(storedLayout);
+} else {
+  layoutSel.value = 'cols-3';
+  setLayout('cols-3');
+}
 
 loadCameras().catch((err) => {
   grid.innerHTML = `<div style="padding:24px;color:var(--danger)">Failed to load: ${escapeHtml(err.message)}</div>`;
