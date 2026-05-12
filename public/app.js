@@ -92,12 +92,82 @@ function stopTile(id) {
   state.timers.delete(id);
 }
 
+// Re-render the grid in sync with state.cameras, but REUSE existing tile DOM
+// nodes wherever possible. This keeps each tile's <img> element alive across
+// reorders, single edits, deletes — so a passing-by car stays visible while
+// you're renaming another camera.
 function renderGrid() {
-  for (const id of state.timers.keys()) stopTile(id);
-  grid.innerHTML = '';
-  state.cameras.forEach((cam) => grid.appendChild(tileEl(cam)));
+  const seen = new Set();
+  for (const cam of state.cameras) {
+    seen.add(cam.id);
+    let tile = grid.querySelector(`:scope > .tile[data-id="${cam.id}"]`);
+    if (!tile) {
+      tile = tileEl(cam);
+      grid.appendChild(tile);
+      startTile(cam);
+    } else {
+      // appendChild on an already-present node just moves it to the end.
+      // Iterating cameras in order lays them out in their new order.
+      grid.appendChild(tile);
+    }
+  }
+  // Remove tiles for cameras that disappeared from state.
+  for (const node of Array.from(grid.children)) {
+    if (node.dataset?.id && !seen.has(Number(node.dataset.id))) {
+      stopTile(Number(node.dataset.id));
+      node.remove();
+    }
+  }
   camCount.textContent = `${state.cameras.length} camera${state.cameras.length === 1 ? '' : 's'}`;
-  state.cameras.forEach(startTile);
+}
+
+// Apply a single-camera update without disturbing any other tile. Used by
+// Edit-save, Pause/Play toggle, and inline rename.
+function upsertCameraInPlace(updated) {
+  const idx = state.cameras.findIndex((c) => c.id === updated.id);
+  if (idx === -1) {
+    state.cameras.push(updated);
+    const tile = tileEl(updated);
+    grid.appendChild(tile);
+    startTile(updated);
+    camCount.textContent = `${state.cameras.length} camera${state.cameras.length === 1 ? '' : 's'}`;
+    return;
+  }
+  // Mutate the existing camera object in place — tile event handlers close
+  // over this reference, so replacing it would leave them with stale state.
+  const before = { ...state.cameras[idx] };
+  Object.assign(state.cameras[idx], updated);
+  const cam = state.cameras[idx];
+  updated = cam; // alias for the rest of the function
+
+  const tile = grid.querySelector(`:scope > .tile[data-id="${updated.id}"]`);
+  if (!tile) { renderGrid(); return; }
+
+  // Name — only touch the DOM if it really changed (and not while the user
+  // is in the middle of editing the field).
+  const nameEl = tile.querySelector('.name');
+  if (nameEl && document.activeElement !== nameEl && nameEl.textContent !== updated.name) {
+    nameEl.textContent = updated.name;
+  }
+  // Enabled state — dot color + button label.
+  const dot = tile.querySelector('.label .dot');
+  if (dot) dot.classList.toggle('ok', !!updated.enabled);
+  const toggleBtn = tile.querySelector('[data-act="toggle"]');
+  if (toggleBtn) toggleBtn.textContent = updated.enabled ? 'Pause' : 'Play';
+
+  // Restart the poll loop only if something that affects polling changed —
+  // otherwise the existing inflight request just keeps going.
+  if (before.enabled !== updated.enabled || before.poll_ms !== updated.poll_ms) {
+    startTile(updated);
+  }
+}
+
+function removeCameraInPlace(id) {
+  state.cameras = state.cameras.filter((c) => c.id !== id);
+  stopTile(id);
+  const tile = grid.querySelector(`:scope > .tile[data-id="${id}"]`);
+  if (tile) tile.remove();
+  camCount.textContent = `${state.cameras.length} camera${state.cameras.length === 1 ? '' : 's'}`;
 }
 
 function tileEl(cam) {
@@ -139,13 +209,12 @@ function tileEl(cam) {
   tile.querySelector('[data-act="edit"]').addEventListener('click', () => openEdit(cam));
   tile.querySelector('[data-act="toggle"]').addEventListener('click', async () => {
     const next = await api(`/api/cameras/${cam.id}`, { method: 'PATCH', body: { enabled: !cam.enabled } });
-    Object.assign(cam, { enabled: next.enabled });
-    renderGrid();
+    upsertCameraInPlace(next);
   });
   tile.querySelector('[data-act="delete"]').addEventListener('click', async () => {
     if (!confirm(`Remove ${cam.name}?`)) return;
     await api(`/api/cameras/${cam.id}`, { method: 'DELETE' });
-    await loadCameras();
+    removeCameraInPlace(cam.id);
   });
   tile.addEventListener('dblclick', (e) => {
     if (e.target.closest('button')) return;
@@ -389,7 +458,7 @@ batchForm.addEventListener('submit', async (e) => {
     mBatch.hidden = true;
     mDiscover.hidden = true;
     selectedHosts = new Set();
-    await loadCameras();
+    for (const cam of result.created || []) upsertCameraInPlace(cam);
     if (result.skipped?.length) {
       alert(`Added ${result.created.length}, skipped ${result.skipped.length} (already existed).`);
     }
@@ -477,11 +546,12 @@ editForm.addEventListener('submit', async (e) => {
   data.poll_ms = Number(data.poll_ms) || 400;
   for (const k of ['username', 'password', 'rtsp_url', 'snapshot_url']) if (!data[k]) data[k] = null;
   try {
-    if (id) await api(`/api/cameras/${id}`, { method: 'PATCH', body: data });
-    else await api('/api/cameras', { method: 'POST', body: data });
+    const saved = id
+      ? await api(`/api/cameras/${id}`, { method: 'PATCH', body: data })
+      : await api('/api/cameras', { method: 'POST', body: data });
     invalidateCredsCache();
     mEdit.hidden = true;
-    await loadCameras();
+    upsertCameraInPlace(saved);
   } catch (err) {
     editStatus.textContent = 'Save failed: ' + err.message;
   }
