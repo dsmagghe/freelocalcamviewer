@@ -32,10 +32,30 @@ function setCols(n) {
 function startTile(cam) {
   stopTile(cam.id);
   if (!cam.enabled) return;
-  const img = document.getElementById(`img-${cam.id}`);
+  const img   = document.getElementById(`img-${cam.id}`);
+  const stamp = document.getElementById(`stamp-${cam.id}`);
   if (!img) return;
+
+  // Wait for each load (or error) before firing the next request — this avoids
+  // queuing dozens of stalled requests when the camera is slow or unreachable
+  // and gives us an honest "last frame received" timestamp.
+  let inflight = false;
   const tick = () => {
-    img.src = `/api/cameras/${cam.id}/snapshot?t=${Date.now()}`;
+    if (inflight) return;
+    inflight = true;
+    const start = Date.now();
+    const url = `/api/cameras/${cam.id}/snapshot?t=${start}`;
+    img.onload = () => {
+      inflight = false;
+      img.classList.remove('stale');
+      if (stamp) stamp.textContent = new Date().toLocaleTimeString();
+    };
+    img.onerror = () => {
+      inflight = false;
+      img.classList.add('stale');
+      if (stamp) stamp.textContent = 'failed';
+    };
+    img.src = url;
   };
   tick();
   const handle = setInterval(tick, cam.poll_ms || 400);
@@ -64,6 +84,7 @@ function tileEl(cam) {
   tile.innerHTML = `
     <img id="img-${cam.id}" alt="${escapeHtml(cam.name)}" />
     <div class="label"><span class="dot ${cam.enabled ? 'ok' : ''}"></span>${escapeHtml(cam.name)}</div>
+    <div class="stamp" id="stamp-${cam.id}">—</div>
     <div class="tools">
       <button data-act="toggle">${cam.enabled ? 'Pause' : 'Play'}</button>
       <button data-act="edit">Edit</button>
