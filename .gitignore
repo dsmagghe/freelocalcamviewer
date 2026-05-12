@@ -1,9 +1,22 @@
 node_modules/
+
+# The camera DB lives here. Camera credentials are stored in plain text
+# inside cameras.db so this directory MUST stay out of git.
 data/
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Anything env-like — even if you don't currently use a .env file, this
+# prevents accidents.
 .env
+.env.local
+.env.*
+
+# Logs (LaunchAgent / pm2 / etc.) sometimes echo URLs that contain
+# usernames and passwords on error.
+*.log
+launchd.*.log
+
 .DS_Store
-npm-debug.log*
