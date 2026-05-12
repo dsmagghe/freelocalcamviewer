@@ -106,10 +106,10 @@ function tileEl(cam) {
   tile.dataset.id = cam.id;
   tile.draggable = false;
   tile.innerHTML = `
-    <img id="img-${cam.id}" alt="${escapeHtml(cam.name)}" />
+    <img id="img-${cam.id}" alt="${escapeHtml(cam.name)}" draggable="false" />
     <div class="label">
       <span class="dot ${cam.enabled ? 'ok' : ''}"></span>
-      <span class="name" contenteditable="true" spellcheck="false">${escapeHtml(cam.name)}</span>
+      <span class="name" contenteditable="${state.editing ? 'false' : 'true'}" spellcheck="false">${escapeHtml(cam.name)}</span>
     </div>
     <div class="stamp" id="stamp-${cam.id}">—</div>
     <div class="tools">
@@ -194,6 +194,11 @@ function toggleEditMode() {
   state.editing = !state.editing;
   document.body.classList.toggle('editing', state.editing);
   document.querySelectorAll('.tile').forEach((t) => (t.draggable = state.editing));
+  // In edit-layout mode, disable contenteditable so the name field doesn't
+  // swallow mousedowns into text-selection (which would block drag-start).
+  document.querySelectorAll('.tile .name').forEach((n) => {
+    n.contentEditable = state.editing ? 'false' : 'true';
+  });
   document.getElementById('btn-edit-mode').textContent = state.editing ? 'Done' : 'Edit layout';
 }
 
