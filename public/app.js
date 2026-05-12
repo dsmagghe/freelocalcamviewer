@@ -40,6 +40,7 @@ function startTile(cam) {
   // queuing dozens of stalled requests when the camera is slow or unreachable
   // and gives us an honest "last frame received" timestamp.
   let inflight = false;
+  let consecutiveFailures = 0;
   const tick = () => {
     if (inflight) return;
     inflight = true;
@@ -47,13 +48,28 @@ function startTile(cam) {
     const url = `/api/cameras/${cam.id}/snapshot?t=${start}`;
     img.onload = () => {
       inflight = false;
+      consecutiveFailures = 0;
       img.classList.remove('stale');
       if (stamp) stamp.textContent = new Date().toLocaleTimeString();
     };
-    img.onerror = () => {
+    img.onerror = async () => {
       inflight = false;
+      consecutiveFailures += 1;
       img.classList.add('stale');
-      if (stamp) stamp.textContent = 'failed';
+      // On error, ask the server why — the 502 body is JSON listing every
+      // method that was tried. Surface the first error so the user can act
+      // (most often "password wrong" → fix credentials on the camera).
+      if (stamp) {
+        try {
+          const r = await fetch(url);
+          const body = await r.json();
+          const first = body.attempts?.[0];
+          const detail = first?.error?.match(/"detail"\s*:\s*"([^"]+)"/)?.[1] || first?.error || 'failed';
+          stamp.textContent = `× ${String(detail).slice(0, 40)}`;
+        } catch {
+          stamp.textContent = '× failed';
+        }
+      }
     };
     img.src = url;
   };

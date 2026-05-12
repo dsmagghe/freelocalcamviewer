@@ -12,7 +12,7 @@ import {
   reorderCameras,
 } from './lib/db.js';
 import { discoverOnLan, probeCamera } from './lib/onvif-client.js';
-import { proxySnapshot } from './lib/snapshot-proxy.js';
+import { proxySnapshot, forgetCamera } from './lib/snapshot-proxy.js';
 import { scanLan } from './lib/lan-scan.js';
 import { VENDOR_LABELS, suggestUrls } from './lib/vendors.js';
 
@@ -44,6 +44,7 @@ function publicView(cam) {
     enabled: !!cam.enabled,
     sort_order: cam.sort_order,
     poll_ms: cam.poll_ms,
+    vendor: cam.vendor || null,
     has_credentials: !!cam.username,
     has_rtsp: !!cam.rtsp_url,
     has_snapshot: !!cam.snapshot_url,
@@ -96,6 +97,7 @@ app.post('/api/cameras/batch', (req, res) => {
       rtsp_url: urls?.rtsp_main || null,
       snapshot_url: urls?.snapshot || null,
       poll_ms: poll_ms ? Number(poll_ms) : 400,
+      vendor: item.vendor || null,
     });
     existing.add(cam.host);
     created.push(publicView(cam));
@@ -104,7 +106,7 @@ app.post('/api/cameras/batch', (req, res) => {
 });
 
 app.post('/api/cameras', (req, res) => {
-  const { name, host, port, username, password, rtsp_url, snapshot_url, poll_ms } = req.body || {};
+  const { name, host, port, username, password, rtsp_url, snapshot_url, poll_ms, vendor } = req.body || {};
   if (!name || !host) return res.status(400).json({ error: 'name and host are required' });
   const cam = insertCamera(db, {
     name,
@@ -115,24 +117,31 @@ app.post('/api/cameras', (req, res) => {
     rtsp_url: rtsp_url || null,
     snapshot_url: snapshot_url || null,
     poll_ms: poll_ms ? Number(poll_ms) : 400,
+    vendor: vendor || null,
   });
   res.status(201).json(publicView(cam));
 });
 
 app.patch('/api/cameras/:id', (req, res) => {
   const id = Number(req.params.id);
+  const before = getCamera(db, id);
   const patch = {};
-  for (const k of ['name', 'host', 'port', 'username', 'password', 'rtsp_url', 'snapshot_url', 'enabled', 'poll_ms']) {
+  for (const k of ['name', 'host', 'port', 'username', 'password', 'rtsp_url', 'snapshot_url', 'enabled', 'poll_ms', 'vendor']) {
     if (k in req.body) patch[k] = req.body[k];
   }
   const cam = updateCamera(db, id, patch);
   if (!cam) return res.status(404).json({ error: 'not found' });
+  // Wipe cached tokens/method whenever credentials, host or vendor change so
+  // the next snapshot request relogins and re-discovers what works.
+  forgetCamera(id, before?.host);
   res.json(publicView(cam));
 });
 
 app.delete('/api/cameras/:id', (req, res) => {
+  const cam = getCamera(db, Number(req.params.id));
   const ok = deleteCamera(db, Number(req.params.id));
   if (!ok) return res.status(404).json({ error: 'not found' });
+  if (cam) forgetCamera(cam.id, cam.host);
   res.status(204).end();
 });
 
