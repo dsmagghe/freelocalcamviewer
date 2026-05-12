@@ -51,6 +51,14 @@
     </div>
   </div>
 
+  <!-- Zoom modal: double-click a tile to inspect it large -->
+  <div class="modal zoom-modal" id="m-zoom" hidden>
+    <button class="zoom-close" data-close title="Close (Esc)">&times;</button>
+    <div class="zoom-name" id="zoom-name"></div>
+    <img id="zoom-img" alt="" />
+    <div class="zoom-stamp" id="zoom-stamp">—</div>
+  </div>
+
   <!-- Batch-add credentials modal -->
   <div class="modal" id="m-batch" hidden>
     <div class="modal-card">

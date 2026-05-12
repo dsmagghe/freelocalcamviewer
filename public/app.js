@@ -118,6 +118,10 @@ function tileEl(cam) {
     await api(`/api/cameras/${cam.id}`, { method: 'DELETE' });
     await loadCameras();
   });
+  tile.addEventListener('dblclick', (e) => {
+    if (e.target.closest('button')) return;
+    openZoom(cam);
+  });
   attachDnd(tile);
   return tile;
 }
@@ -449,8 +453,63 @@ editForm.addEventListener('submit', async (e) => {
   }
 });
 
+// --- Zoom modal (double-click a tile to inspect) ---
+const mZoom     = document.getElementById('m-zoom');
+const zoomImg   = document.getElementById('zoom-img');
+const zoomName  = document.getElementById('zoom-name');
+const zoomStamp = document.getElementById('zoom-stamp');
+let zoomTimer   = null;
+
+function openZoom(cam) {
+  zoomName.textContent = cam.name;
+  zoomStamp.textContent = '—';
+  zoomImg.src = '';
+  zoomImg.classList.remove('stale');
+  mZoom.hidden = false;
+
+  let inflight = false;
+  const tick = () => {
+    if (inflight) return;
+    inflight = true;
+    const url = `/api/cameras/${cam.id}/snapshot?t=${Date.now()}&zoom=1`;
+    zoomImg.onload = () => {
+      inflight = false;
+      zoomImg.classList.remove('stale');
+      zoomStamp.textContent = new Date().toLocaleTimeString();
+    };
+    zoomImg.onerror = () => {
+      inflight = false;
+      zoomImg.classList.add('stale');
+      zoomStamp.textContent = '× failed';
+    };
+    zoomImg.src = url;
+  };
+  tick();
+  zoomTimer = setInterval(tick, cam.poll_ms || 400);
+}
+
+function closeZoom() {
+  if (zoomTimer) clearInterval(zoomTimer);
+  zoomTimer = null;
+  zoomImg.onload = zoomImg.onerror = null;
+  zoomImg.src = '';
+  mZoom.hidden = true;
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !mZoom.hidden) closeZoom();
+});
+mZoom.addEventListener('click', (e) => {
+  // Clicking the dark backdrop closes too.
+  if (e.target === mZoom) closeZoom();
+});
+
 document.querySelectorAll('[data-close]').forEach((b) =>
-  b.addEventListener('click', (e) => e.target.closest('.modal').hidden = true)
+  b.addEventListener('click', (e) => {
+    const modal = e.target.closest('.modal');
+    if (modal === mZoom) return closeZoom();
+    modal.hidden = true;
+  })
 );
 
 document.getElementById('btn-discover').addEventListener('click', openDiscover);
