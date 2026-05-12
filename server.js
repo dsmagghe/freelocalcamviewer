@@ -13,6 +13,8 @@ import {
 } from './lib/db.js';
 import { discoverOnLan, probeCamera } from './lib/onvif-client.js';
 import { proxySnapshot } from './lib/snapshot-proxy.js';
+import { scanLan } from './lib/lan-scan.js';
+import { VENDOR_LABELS, suggestUrls } from './lib/vendors.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8088);
@@ -95,6 +97,74 @@ app.post('/api/discover', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Combined scan: ONVIF WS-Discovery + TCP-probe of local /24 + ARP/OUI lookup.
+// Runs both in parallel and merges results by IP so users see one unified list.
+app.post('/api/scan', async (req, res) => {
+  const onvifTimeoutMs = Number(req.body?.onvifTimeoutMs || 4000);
+  const tcpTimeoutMs   = Number(req.body?.tcpTimeoutMs   || 600);
+
+  const [onvifResult, lanResult] = await Promise.allSettled([
+    discoverOnLan({ timeoutMs: onvifTimeoutMs }),
+    scanLan({ timeoutMs: tcpTimeoutMs }),
+  ]);
+
+  const byIp = new Map();
+  if (lanResult.status === 'fulfilled') {
+    for (const h of lanResult.value) {
+      byIp.set(h.ip, {
+        host: h.ip,
+        port: pickHttpPort(h.open_ports),
+        open_ports: h.open_ports,
+        mac: h.mac || null,
+        vendor: h.vendor || null,
+        vendor_label: h.vendor ? VENDOR_LABELS[h.vendor] || h.vendor : null,
+        likely_camera: !!h.likely_camera,
+        source: 'lan-scan',
+        name: null,
+        hardware: null,
+      });
+    }
+  }
+  if (onvifResult.status === 'fulfilled') {
+    for (const d of onvifResult.value) {
+      const existing = byIp.get(d.host);
+      const merged = {
+        ...(existing || {}),
+        host: d.host,
+        port: d.port || existing?.port || 80,
+        name: d.name || existing?.name || null,
+        hardware: d.hardware || existing?.hardware || null,
+        onvif: true,
+        likely_camera: true,
+        source: existing ? 'lan-scan+onvif' : 'onvif',
+      };
+      byIp.set(d.host, merged);
+    }
+  }
+
+  res.json({
+    devices: [...byIp.values()],
+    onvif_error: onvifResult.status === 'rejected' ? onvifResult.reason?.message : null,
+    lan_error:   lanResult.status   === 'rejected' ? lanResult.reason?.message   : null,
+  });
+});
+
+function pickHttpPort(open) {
+  if (!open?.length) return 80;
+  for (const p of [80, 8080, 8000, 443, 8443]) if (open.includes(p)) return p;
+  return open[0];
+}
+
+// Returns suggested RTSP/snapshot URLs for a known vendor — used by the frontend
+// to pre-fill the add-camera form once the user types their credentials.
+app.post('/api/vendor-template', (req, res) => {
+  const { vendor, host, username, password } = req.body || {};
+  if (!vendor || !host) return res.status(400).json({ error: 'vendor and host required' });
+  const urls = suggestUrls(vendor, { host, username: username || '', password: password || '' });
+  if (!urls) return res.status(404).json({ error: 'unknown vendor' });
+  res.json(urls);
 });
 
 app.post('/api/probe', async (req, res) => {
