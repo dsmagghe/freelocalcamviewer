@@ -36,51 +36,59 @@ function startTile(cam) {
   const stamp = document.getElementById(`stamp-${cam.id}`);
   if (!img) return;
 
-  // Wait for each load (or error) before firing the next request — this avoids
-  // queuing dozens of stalled requests when the camera is slow or unreachable
-  // and gives us an honest "last frame received" timestamp.
-  let inflight = false;
-  let consecutiveFailures = 0;
+  const baseMs = cam.poll_ms || 400;
+  // After consecutive failures, slow down so we don't hammer a camera that's
+  // refusing us (rate-limited, offline, bad creds). Reset on first success.
+  const BACKOFFS = [baseMs * 5, 5_000, 15_000, 30_000, 60_000];
+
+  let stopped = false;
+  let pending = null;
+  let failures = 0;
+
+  const schedule = (delay) => {
+    if (stopped) return;
+    pending = setTimeout(tick, delay);
+  };
+
   const tick = () => {
-    if (inflight) return;
-    inflight = true;
-    const start = Date.now();
-    const url = `/api/cameras/${cam.id}/snapshot?t=${start}`;
+    pending = null;
+    if (stopped) return;
+    const url = `/api/cameras/${cam.id}/snapshot?t=${Date.now()}`;
     img.onload = () => {
-      inflight = false;
-      consecutiveFailures = 0;
+      failures = 0;
       img.classList.remove('stale');
       if (stamp) stamp.textContent = new Date().toLocaleTimeString();
+      schedule(baseMs);
     };
     img.onerror = async () => {
-      inflight = false;
-      consecutiveFailures += 1;
+      failures += 1;
       img.classList.add('stale');
-      // On error, ask the server why — the 502 body is JSON listing every
-      // method that was tried. Surface the first error so the user can act
-      // (most often "password wrong" → fix credentials on the camera).
       if (stamp) {
         try {
           const r = await fetch(url);
           const body = await r.json();
           const first = body.attempts?.[0];
           const detail = first?.error?.match(/"detail"\s*:\s*"([^"]+)"/)?.[1] || first?.error || 'failed';
-          stamp.textContent = `× ${String(detail).slice(0, 40)}`;
+          stamp.textContent = `× ${String(detail).slice(0, 50)}`;
         } catch {
           stamp.textContent = '× failed';
         }
       }
+      const delay = BACKOFFS[Math.min(failures - 1, BACKOFFS.length - 1)];
+      schedule(delay);
     };
     img.src = url;
   };
+
+  state.timers.set(cam.id, {
+    stop: () => { stopped = true; if (pending) clearTimeout(pending); },
+  });
   tick();
-  const handle = setInterval(tick, cam.poll_ms || 400);
-  state.timers.set(cam.id, handle);
 }
 
 function stopTile(id) {
   const h = state.timers.get(id);
-  if (h) clearInterval(h);
+  if (h) h.stop();
   state.timers.delete(id);
 }
 
