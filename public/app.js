@@ -138,13 +138,48 @@ const discoverList = document.getElementById('discover-list');
 const discoverStatus = document.getElementById('discover-status');
 
 let lastDevices = [];
-const filterCheckbox = document.getElementById('filter-cameras');
+let selectedHosts = new Set();
+const filterCheckbox  = document.getElementById('filter-cameras');
+const selectAllBox    = document.getElementById('select-all');
+const btnBatchAdd     = document.getElementById('btn-batch-add');
+const btnRescan       = document.getElementById('btn-rescan');
+const discoverMeta    = document.getElementById('discover-meta');
+
 filterCheckbox.addEventListener('change', renderDiscoverList);
+selectAllBox.addEventListener('change', () => {
+  const visible = visibleDevices();
+  if (selectAllBox.checked) visible.forEach((d) => selectedHosts.add(d.host));
+  else visible.forEach((d) => selectedHosts.delete(d.host));
+  renderDiscoverList();
+});
+btnRescan.addEventListener('click', openDiscover);
+btnBatchAdd.addEventListener('click', openBatchAdd);
+
+function existingHosts() {
+  return new Set(state.cameras.map((c) => c.host));
+}
+
+function visibleDevices() {
+  const onlyCams = filterCheckbox.checked;
+  const existing = existingHosts();
+  return lastDevices.filter((d) => {
+    if (existing.has(d.host)) return false;
+    if (onlyCams && !d.likely_camera && !d.onvif) return false;
+    return true;
+  });
+}
+
+function updateBatchButton() {
+  const n = selectedHosts.size;
+  btnBatchAdd.disabled = n === 0;
+  btnBatchAdd.textContent = n ? `Add selected (${n})` : 'Add selected';
+}
 
 function renderDiscoverList() {
   discoverList.innerHTML = '';
-  const onlyCams = filterCheckbox.checked;
-  const visible = lastDevices.filter((d) => !onlyCams || d.likely_camera || d.onvif);
+  const existing = existingHosts();
+  const visible = visibleDevices();
+
   visible.forEach((d) => {
     const li = document.createElement('li');
     const title = d.name || (d.vendor_label ? `${d.vendor_label} @ ${d.host}` : d.host);
@@ -154,38 +189,68 @@ function renderDiscoverList() {
       d.mac ? `<span class="badge" title="${escapeHtml(d.mac)}">${escapeHtml(d.mac.slice(0,8))}…</span>` : '',
     ].join('');
     const portList = d.open_ports?.length ? `ports ${d.open_ports.join(',')}` : `port ${d.port}`;
+    const checked = selectedHosts.has(d.host) ? 'checked' : '';
     li.innerHTML = `
+      <input type="checkbox" data-host="${escapeHtml(d.host)}" ${checked} />
       <div class="info">
         <div><strong>${escapeHtml(title)}</strong>${badges}</div>
         <div class="meta">${escapeHtml(d.host)} · ${portList}${d.hardware ? ' · ' + escapeHtml(d.hardware) : ''}</div>
       </div>
-      <button class="primary">Add</button>
+      <button class="primary" data-act="add">Add</button>
     `;
-    li.querySelector('button').addEventListener('click', () => {
+    const cb = li.querySelector('input[type=checkbox]');
+    cb.addEventListener('change', () => {
+      if (cb.checked) selectedHosts.add(d.host);
+      else selectedHosts.delete(d.host);
+      updateBatchButton();
+      syncSelectAll();
+    });
+    li.querySelector('[data-act="add"]').addEventListener('click', async () => {
       mDiscover.hidden = true;
+      const creds = await fetchDefaultCreds();
       openEdit({
         name: title,
         host: d.host,
         port: d.port || 80,
+        username: creds.username,
+        password: creds.password,
         _vendor: d.vendor || null,
       });
     });
     discoverList.appendChild(li);
   });
-  const hidden = lastDevices.length - visible.length;
-  if (hidden > 0 && onlyCams) {
-    const li = document.createElement('li');
-    li.className = 'meta';
-    li.style.justifyContent = 'center';
-    li.textContent = `${hidden} other device(s) hidden — uncheck "Cameras only" to show all.`;
-    discoverList.appendChild(li);
-  }
+
+  const hiddenAdded = lastDevices.filter((d) => existing.has(d.host)).length;
+  const hiddenFilter = lastDevices.length - visible.length - hiddenAdded;
+  const parts = [];
+  if (hiddenAdded)  parts.push(`${hiddenAdded} already added`);
+  if (hiddenFilter) parts.push(`${hiddenFilter} non-camera hidden`);
+  discoverMeta.textContent = parts.length ? `(${parts.join(' · ')})` : '';
+  syncSelectAll();
+  updateBatchButton();
 }
+
+function syncSelectAll() {
+  const visible = visibleDevices();
+  selectAllBox.checked = visible.length > 0 && visible.every((d) => selectedHosts.has(d.host));
+}
+
+let _credsCache = null;
+async function fetchDefaultCreds() {
+  if (_credsCache) return _credsCache;
+  try { _credsCache = await api('/api/settings/default-credentials'); }
+  catch { _credsCache = { username: '', password: '' }; }
+  return _credsCache;
+}
+function invalidateCredsCache() { _credsCache = null; }
 
 async function openDiscover() {
   discoverList.innerHTML = '';
   lastDevices = [];
+  selectedHosts = new Set();
+  updateBatchButton();
   discoverStatus.textContent = 'Scanning ONVIF (multicast) + TCP-probing your local subnet…';
+  discoverMeta.textContent = '';
   mDiscover.hidden = false;
   try {
     const { devices, onvif_error, lan_error } = await api('/api/scan', {
@@ -203,6 +268,60 @@ async function openDiscover() {
     discoverStatus.textContent = 'Error: ' + err.message;
   }
 }
+
+// --- Batch add modal ---
+const mBatch = document.getElementById('m-batch');
+const batchForm = document.getElementById('batch-form');
+const batchCount = document.getElementById('batch-count');
+const batchStatus = document.getElementById('batch-status');
+
+async function openBatchAdd() {
+  if (!selectedHosts.size) return;
+  const items = lastDevices.filter((d) => selectedHosts.has(d.host));
+  batchCount.textContent = items.length;
+  batchStatus.textContent = '';
+  batchForm.reset();
+  batchForm.elements.poll_ms.value = 400;
+  const creds = await fetchDefaultCreds();
+  batchForm.elements.username.value = creds.username || '';
+  batchForm.elements.password.value = creds.password || '';
+  mBatch.hidden = false;
+}
+
+batchForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(batchForm).entries());
+  const items = lastDevices
+    .filter((d) => selectedHosts.has(d.host))
+    .map((d) => ({
+      host: d.host,
+      port: d.port || 80,
+      vendor: d.vendor || null,
+      name: d.name || (d.vendor_label ? `${d.vendor_label} ${d.host}` : d.host),
+    }));
+  batchStatus.textContent = `Adding ${items.length}…`;
+  try {
+    const result = await api('/api/cameras/batch', {
+      method: 'POST',
+      body: {
+        items,
+        username: data.username || null,
+        password: data.password || null,
+        poll_ms: Number(data.poll_ms) || 400,
+      },
+    });
+    invalidateCredsCache();
+    mBatch.hidden = true;
+    mDiscover.hidden = true;
+    selectedHosts = new Set();
+    await loadCameras();
+    if (result.skipped?.length) {
+      alert(`Added ${result.created.length}, skipped ${result.skipped.length} (already existed).`);
+    }
+  } catch (err) {
+    batchStatus.textContent = 'Failed: ' + err.message;
+  }
+});
 
 // --- Edit modal ---
 const mEdit = document.getElementById('m-edit');
@@ -285,6 +404,7 @@ editForm.addEventListener('submit', async (e) => {
   try {
     if (id) await api(`/api/cameras/${id}`, { method: 'PATCH', body: data });
     else await api('/api/cameras', { method: 'POST', body: data });
+    invalidateCredsCache();
     mEdit.hidden = true;
     await loadCameras();
   } catch (err) {
@@ -297,7 +417,10 @@ document.querySelectorAll('[data-close]').forEach((b) =>
 );
 
 document.getElementById('btn-discover').addEventListener('click', openDiscover);
-document.getElementById('btn-add').addEventListener('click', () => openEdit({}));
+document.getElementById('btn-add').addEventListener('click', async () => {
+  const creds = await fetchDefaultCreds();
+  openEdit({ username: creds.username || '', password: creds.password || '' });
+});
 document.getElementById('btn-edit-mode').addEventListener('click', toggleEditMode);
 
 colsSel.addEventListener('change', () => setCols(colsSel.value));
