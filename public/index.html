@@ -31,15 +31,43 @@
   <!-- Discover modal -->
   <div class="modal" id="m-discover" hidden>
     <div class="modal-card">
-      <header><h2>Scan local network</h2><button class="x" data-close>&times;</button></header>
+      <header>
+        <h2>Scan local network</h2>
+        <button class="x" data-close>&times;</button>
+      </header>
       <div id="discover-status" class="muted">Scanning…</div>
+      <div class="toolbar">
+        <label class="muted"><input type="checkbox" id="filter-cameras" checked /> Cameras only</label>
+        <label class="muted"><input type="checkbox" id="select-all" /> Select all</label>
+        <span class="grow"></span>
+        <button id="btn-rescan">Rescan</button>
+        <button id="btn-batch-add" class="primary" disabled>Add selected</button>
+      </div>
       <ul id="discover-list" class="device-list"></ul>
       <footer>
-        <label class="muted" style="display:flex;align-items:center;gap:6px;">
-          <input type="checkbox" id="filter-cameras" checked /> Cameras only
-        </label>
+        <span class="muted" id="discover-meta"></span>
         <button data-close>Close</button>
       </footer>
+    </div>
+  </div>
+
+  <!-- Batch-add credentials modal -->
+  <div class="modal" id="m-batch" hidden>
+    <div class="modal-card">
+      <header><h2>Add <span id="batch-count">0</span> camera(s)</h2><button class="x" data-close>&times;</button></header>
+      <form id="batch-form">
+        <p class="muted">These credentials will be used for every selected camera. RTSP &amp; snapshot URLs are filled in from the vendor template.</p>
+        <div class="row">
+          <label class="grow">Username <input name="username" autocomplete="off" /></label>
+          <label class="grow">Password <input name="password" type="password" autocomplete="off" /></label>
+        </div>
+        <label>Poll interval (ms) <input name="poll_ms" type="number" value="400" min="100" max="10000" /></label>
+        <div class="row end">
+          <button type="button" data-close>Cancel</button>
+          <button type="submit" class="primary">Add all</button>
+        </div>
+        <div id="batch-status" class="muted"></div>
+      </form>
     </div>
   </div>
 

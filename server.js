@@ -24,7 +24,15 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'cameras.db'
 const db = openDb(DB_PATH);
 const app = express();
 app.use(express.json({ limit: '256kb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(
+  express.static(path.join(__dirname, 'public'), {
+    // Static UI is small and changes between releases — don't let browsers
+    // serve stale versions when we ship fixes.
+    setHeaders(res) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    },
+  })
+);
 
 function publicView(cam) {
   if (!cam) return null;
@@ -47,6 +55,52 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
 app.get('/api/cameras', (_req, res) => {
   res.json(listCameras(db).map(publicView));
+});
+
+// Most recently saved credentials, used to pre-fill the Add form and as the
+// default for batch-add. Returning the actual password is intentional — this
+// app is LAN-only and the DB already stores credentials in plain text.
+app.get('/api/settings/default-credentials', (_req, res) => {
+  const row = db.prepare(`
+    SELECT username, password FROM cameras
+    WHERE username IS NOT NULL AND username != ''
+    ORDER BY id DESC LIMIT 1
+  `).get();
+  res.json({ username: row?.username || '', password: row?.password || '' });
+});
+
+// Bulk-create cameras using one shared credential set + vendor URL templates.
+// Each item is {host, port?, vendor?, name?} — credentials apply to all.
+app.post('/api/cameras/batch', (req, res) => {
+  const { items, username, password, poll_ms } = req.body || {};
+  if (!Array.isArray(items) || !items.length) {
+    return res.status(400).json({ error: 'items must be a non-empty array' });
+  }
+  const existing = new Set(listCameras(db).map((c) => c.host));
+  const created = [];
+  const skipped = [];
+  for (const item of items) {
+    if (!item.host || existing.has(item.host)) {
+      skipped.push({ host: item.host, reason: existing.has(item.host) ? 'already exists' : 'missing host' });
+      continue;
+    }
+    const urls = item.vendor
+      ? suggestUrls(item.vendor, { host: item.host, username: username || '', password: password || '' })
+      : null;
+    const cam = insertCamera(db, {
+      name: item.name || (item.vendor ? `${VENDOR_LABELS[item.vendor] || item.vendor} ${item.host}` : item.host),
+      host: item.host,
+      port: item.port ? Number(item.port) : 80,
+      username: username || null,
+      password: password || null,
+      rtsp_url: urls?.rtsp_main || null,
+      snapshot_url: urls?.snapshot || null,
+      poll_ms: poll_ms ? Number(poll_ms) : 400,
+    });
+    existing.add(cam.host);
+    created.push(publicView(cam));
+  }
+  res.json({ created, skipped });
 });
 
 app.post('/api/cameras', (req, res) => {
