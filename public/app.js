@@ -378,8 +378,6 @@ const editForm = document.getElementById('edit-form');
 const editStatus = document.getElementById('edit-status');
 const editTitle = document.getElementById('edit-title');
 
-let pendingVendor = null;
-
 function openEdit(cam) {
   editTitle.textContent = cam.id ? 'Edit camera' : 'Add camera';
   editStatus.textContent = '';
@@ -390,22 +388,23 @@ function openEdit(cam) {
   }
   if (!cam.poll_ms) editForm.elements.poll_ms.value = 400;
   if (!cam.port) editForm.elements.port.value = 80;
-  pendingVendor = cam._vendor || null;
-  if (pendingVendor) {
-    editStatus.textContent = `Detected as ${pendingVendor.toUpperCase()} — enter credentials and the RTSP & snapshot URLs will be filled in for you.`;
+  // _vendor is the detected vendor from the scan; for an existing camera the
+  // vendor field is set directly from cam.vendor by the loop above.
+  if (cam._vendor && !editForm.elements.vendor.value) {
+    editForm.elements.vendor.value = cam._vendor;
+    editStatus.textContent = `Detected as ${cam._vendor.toUpperCase()} — enter credentials and the RTSP & snapshot URLs will be filled in for you.`;
   }
   mEdit.hidden = false;
 }
 
 async function applyVendorTemplate() {
-  if (!pendingVendor) return;
   const data = Object.fromEntries(new FormData(editForm).entries());
-  if (!data.host) return;
+  if (!data.vendor || !data.host) return;
   try {
     const urls = await api('/api/vendor-template', {
       method: 'POST',
       body: {
-        vendor: pendingVendor,
+        vendor: data.vendor,
         host: data.host,
         username: data.username || '',
         password: data.password || '',
@@ -417,14 +416,15 @@ async function applyVendorTemplate() {
     if (urls.snapshot && !editForm.elements.snapshot_url.value) {
       editForm.elements.snapshot_url.value = urls.snapshot;
     }
-  } catch (err) {
-    // Silent — template suggestion is best-effort.
+  } catch {
+    // Best-effort — server also regenerates URLs on save when vendor changes.
   }
 }
 
-['username', 'password', 'host'].forEach((n) => {
+['username', 'password', 'host', 'vendor'].forEach((n) => {
   editForm.elements[n].addEventListener('blur', applyVendorTemplate);
 });
+editForm.elements.vendor.addEventListener('change', applyVendorTemplate);
 
 document.getElementById('btn-probe').addEventListener('click', async () => {
   const data = Object.fromEntries(new FormData(editForm).entries());

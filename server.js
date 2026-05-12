@@ -129,10 +129,23 @@ app.patch('/api/cameras/:id', (req, res) => {
   for (const k of ['name', 'host', 'port', 'username', 'password', 'rtsp_url', 'snapshot_url', 'enabled', 'poll_ms', 'vendor']) {
     if (k in req.body) patch[k] = req.body[k];
   }
+  // When the user sets / changes a vendor and didn't supply their own URLs,
+  // fill them in from the vendor template. This makes "I just learned this
+  // is a Reolink doorbell, please configure it" a one-field action.
+  if (patch.vendor && patch.vendor !== before?.vendor) {
+    const merged = { ...before, ...patch };
+    const urls = suggestUrls(patch.vendor, {
+      host: merged.host,
+      username: merged.username || '',
+      password: merged.password || '',
+    });
+    if (urls) {
+      if (!('rtsp_url' in req.body) || !req.body.rtsp_url) patch.rtsp_url = urls.rtsp_main;
+      if (!('snapshot_url' in req.body) || !req.body.snapshot_url) patch.snapshot_url = urls.snapshot;
+    }
+  }
   const cam = updateCamera(db, id, patch);
   if (!cam) return res.status(404).json({ error: 'not found' });
-  // Wipe cached tokens/method whenever credentials, host or vendor change so
-  // the next snapshot request relogins and re-discovers what works.
   forgetCamera(id, before?.host);
   res.json(publicView(cam));
 });
