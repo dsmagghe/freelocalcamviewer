@@ -137,28 +137,68 @@ const mDiscover = document.getElementById('m-discover');
 const discoverList = document.getElementById('discover-list');
 const discoverStatus = document.getElementById('discover-status');
 
+let lastDevices = [];
+const filterCheckbox = document.getElementById('filter-cameras');
+filterCheckbox.addEventListener('change', renderDiscoverList);
+
+function renderDiscoverList() {
+  discoverList.innerHTML = '';
+  const onlyCams = filterCheckbox.checked;
+  const visible = lastDevices.filter((d) => !onlyCams || d.likely_camera || d.onvif);
+  visible.forEach((d) => {
+    const li = document.createElement('li');
+    const title = d.name || (d.vendor_label ? `${d.vendor_label} @ ${d.host}` : d.host);
+    const badges = [
+      d.vendor_label ? `<span class="badge vendor">${escapeHtml(d.vendor_label)}</span>` : '',
+      d.onvif ? `<span class="badge onvif">ONVIF</span>` : '',
+      d.mac ? `<span class="badge" title="${escapeHtml(d.mac)}">${escapeHtml(d.mac.slice(0,8))}…</span>` : '',
+    ].join('');
+    const portList = d.open_ports?.length ? `ports ${d.open_ports.join(',')}` : `port ${d.port}`;
+    li.innerHTML = `
+      <div class="info">
+        <div><strong>${escapeHtml(title)}</strong>${badges}</div>
+        <div class="meta">${escapeHtml(d.host)} · ${portList}${d.hardware ? ' · ' + escapeHtml(d.hardware) : ''}</div>
+      </div>
+      <button class="primary">Add</button>
+    `;
+    li.querySelector('button').addEventListener('click', () => {
+      mDiscover.hidden = true;
+      openEdit({
+        name: title,
+        host: d.host,
+        port: d.port || 80,
+        _vendor: d.vendor || null,
+      });
+    });
+    discoverList.appendChild(li);
+  });
+  const hidden = lastDevices.length - visible.length;
+  if (hidden > 0 && onlyCams) {
+    const li = document.createElement('li');
+    li.className = 'meta';
+    li.style.justifyContent = 'center';
+    li.textContent = `${hidden} other device(s) hidden — uncheck "Cameras only" to show all.`;
+    discoverList.appendChild(li);
+  }
+}
+
 async function openDiscover() {
   discoverList.innerHTML = '';
-  discoverStatus.textContent = 'Scanning local network (≈5s)…';
+  lastDevices = [];
+  discoverStatus.textContent = 'Scanning ONVIF (multicast) + TCP-probing your local subnet…';
   mDiscover.hidden = false;
   try {
-    const devices = await api('/api/discover', { method: 'POST', body: { timeoutMs: 5000 } });
-    discoverStatus.textContent = devices.length ? `Found ${devices.length} device(s).` : 'No ONVIF devices responded. You can still add cameras manually.';
-    devices.forEach((d) => {
-      const li = document.createElement('li');
-      li.innerHTML = `
-        <div>
-          <div><strong>${escapeHtml(d.name || d.host)}</strong></div>
-          <div class="meta">${escapeHtml(d.host)}:${d.port}${d.hardware ? ' · ' + escapeHtml(d.hardware) : ''}</div>
-        </div>
-        <button class="primary">Add</button>
-      `;
-      li.querySelector('button').addEventListener('click', () => {
-        mDiscover.hidden = true;
-        openEdit({ name: d.name || `Camera ${d.host}`, host: d.host, port: d.port });
-      });
-      discoverList.appendChild(li);
+    const { devices, onvif_error, lan_error } = await api('/api/scan', {
+      method: 'POST',
+      body: { onvifTimeoutMs: 4000, tcpTimeoutMs: 600 },
     });
+    lastDevices = devices;
+    const msgs = [];
+    msgs.push(devices.length ? `Found ${devices.length} device(s).` : 'No devices found.');
+    if (onvif_error) msgs.push(`ONVIF: ${onvif_error}`);
+    if (lan_error) msgs.push(`Scan: ${lan_error}`);
+    discoverStatus.textContent = msgs.join(' · ');
+    renderDiscoverList();
   } catch (err) {
     discoverStatus.textContent = 'Error: ' + err.message;
   }
@@ -170,6 +210,8 @@ const editForm = document.getElementById('edit-form');
 const editStatus = document.getElementById('edit-status');
 const editTitle = document.getElementById('edit-title');
 
+let pendingVendor = null;
+
 function openEdit(cam) {
   editTitle.textContent = cam.id ? 'Edit camera' : 'Add camera';
   editStatus.textContent = '';
@@ -180,8 +222,41 @@ function openEdit(cam) {
   }
   if (!cam.poll_ms) editForm.elements.poll_ms.value = 400;
   if (!cam.port) editForm.elements.port.value = 80;
+  pendingVendor = cam._vendor || null;
+  if (pendingVendor) {
+    editStatus.textContent = `Detected as ${pendingVendor.toUpperCase()} — enter credentials and the RTSP & snapshot URLs will be filled in for you.`;
+  }
   mEdit.hidden = false;
 }
+
+async function applyVendorTemplate() {
+  if (!pendingVendor) return;
+  const data = Object.fromEntries(new FormData(editForm).entries());
+  if (!data.host) return;
+  try {
+    const urls = await api('/api/vendor-template', {
+      method: 'POST',
+      body: {
+        vendor: pendingVendor,
+        host: data.host,
+        username: data.username || '',
+        password: data.password || '',
+      },
+    });
+    if (urls.rtsp_main && !editForm.elements.rtsp_url.value) {
+      editForm.elements.rtsp_url.value = urls.rtsp_main;
+    }
+    if (urls.snapshot && !editForm.elements.snapshot_url.value) {
+      editForm.elements.snapshot_url.value = urls.snapshot;
+    }
+  } catch (err) {
+    // Silent — template suggestion is best-effort.
+  }
+}
+
+['username', 'password', 'host'].forEach((n) => {
+  editForm.elements[n].addEventListener('blur', applyVendorTemplate);
+});
 
 document.getElementById('btn-probe').addEventListener('click', async () => {
   const data = Object.fromEntries(new FormData(editForm).entries());

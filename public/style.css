@@ -82,8 +82,12 @@ body.editing .tile.drop-target { outline-color: var(--accent); }
 .modal-card .row .grow { flex: 1; }
 
 .device-list { list-style: none; margin: 0; padding: 0 14px 8px; max-height: 50vh; overflow: auto; }
-.device-list li { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.device-list li { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); gap: 12px; }
 .device-list li:last-child { border-bottom: none; }
 .device-list .meta { font-size: 12px; color: var(--muted); }
+.device-list .info { min-width: 0; flex: 1; }
+.badge { display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+.badge.vendor { background: var(--accent); border-color: var(--accent); color: white; }
+.badge.onvif { background: #2e7d32; border-color: #2e7d32; color: white; }
 
-.modal-card footer { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border); }
+.modal-card footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px solid var(--border); }

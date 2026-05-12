@@ -31,10 +31,15 @@
   <!-- Discover modal -->
   <div class="modal" id="m-discover" hidden>
     <div class="modal-card">
-      <header><h2>Discovered cameras</h2><button class="x" data-close>&times;</button></header>
+      <header><h2>Scan local network</h2><button class="x" data-close>&times;</button></header>
       <div id="discover-status" class="muted">Scanning…</div>
       <ul id="discover-list" class="device-list"></ul>
-      <footer><button data-close>Close</button></footer>
+      <footer>
+        <label class="muted" style="display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="filter-cameras" checked /> Cameras only
+        </label>
+        <button data-close>Close</button>
+      </footer>
     </div>
   </div>
 
