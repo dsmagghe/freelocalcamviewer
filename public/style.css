@@ -45,6 +45,23 @@ button.danger  { background: transparent; border-color: var(--danger); color: va
 .grid.cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .grid.cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 
+/* Featured layouts: the first N tiles get extra row+column span so they
+   read as the "important" cameras. The remaining tiles auto-flow around. */
+.grid.featured-1 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.grid.featured-1 .tile:nth-child(1) { grid-column: span 2; grid-row: span 2; }
+
+.grid.featured-2 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.grid.featured-2 .tile:nth-child(-n+2) { grid-column: span 2; grid-row: span 2; }
+
+.grid.featured-4 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.grid.featured-4 .tile:nth-child(-n+4) { grid-column: span 2; grid-row: span 2; }
+
+/* Cinema: 1 huge tile occupies most of the viewport, the rest scrolls in a
+   sidebar on the right. */
+.grid.cinema { grid-template-columns: 3fr 1fr; grid-auto-rows: minmax(100px, auto); }
+.grid.cinema .tile:nth-child(1) { grid-column: 1; grid-row: 1 / span 6; }
+.grid.cinema .tile:not(:nth-child(1)) { grid-column: 2; }
+
 .tile {
   position: relative; background: #000; aspect-ratio: 16/9; overflow: hidden;
   border: 1px solid var(--border); border-radius: 6px;
@@ -56,6 +73,12 @@ button.danger  { background: transparent; border-color: var(--danger); color: va
 }
 .tile .label .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; background: var(--danger); }
 .tile .label .dot.ok { background: var(--ok); }
+.tile .label .name {
+  outline: none; padding: 0 4px; border-radius: 3px; cursor: text;
+  transition: background 0.15s;
+}
+.tile .label .name:hover { background: rgba(255,255,255,0.08); }
+.tile .label .name:focus { background: rgba(255,255,255,0.18); box-shadow: 0 0 0 1px var(--accent); }
 .tile .stamp {
   position: absolute; right: 6px; bottom: 6px;
   background: rgba(0,0,0,0.55); padding: 2px 6px; border-radius: 4px;
