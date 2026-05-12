@@ -1,0 +1,18 @@
+[Unit]
+Description=FreeLocalCamViewer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/freelocalcamviewer
+Environment=PORT=8088
+Environment=HOST=0.0.0.0
+Environment=DB_PATH=/opt/freelocalcamviewer/data/cameras.db
+ExecStart=/usr/bin/node /opt/freelocalcamviewer/server.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

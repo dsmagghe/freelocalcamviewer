@@ -1,0 +1,22 @@
+{
+  "name": "freelocalcamviewer",
+  "version": "0.1.0",
+  "description": "Self-hosted ONVIF camera viewer for Raspberry Pi and other local hardware. Auto-discovers cameras on the LAN, remembers layout, streams many feeds in a single browser grid.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "freelocalcamviewer": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "express": "^4.21.1",
+    "onvif": "^0.7.3"
+  }
+}

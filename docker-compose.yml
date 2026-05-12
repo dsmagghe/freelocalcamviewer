@@ -1,0 +1,13 @@
+services:
+  freelocalcamviewer:
+    build: .
+    container_name: freelocalcamviewer
+    restart: unless-stopped
+    # host networking is required for ONVIF WS-Discovery (multicast)
+    network_mode: host
+    environment:
+      PORT: 8088
+      HOST: 0.0.0.0
+      DB_PATH: /data/cameras.db
+    volumes:
+      - ./data:/data
