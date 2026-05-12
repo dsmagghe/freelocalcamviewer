@@ -79,6 +79,10 @@ button.danger  { background: transparent; border-color: var(--danger); color: va
 }
 .tile .label .name:hover { background: rgba(255,255,255,0.08); }
 .tile .label .name:focus { background: rgba(255,255,255,0.18); box-shadow: 0 0 0 1px var(--accent); }
+/* In drag-mode the name field is non-editable; suppress the hover hint so it
+   doesn't look interactive, and make sure the whole tile feels draggable. */
+body.editing .tile .label .name { cursor: grab; pointer-events: none; }
+body.editing .tile .label .name:hover { background: transparent; }
 .tile .stamp {
   position: absolute; right: 6px; bottom: 6px;
   background: rgba(0,0,0,0.55); padding: 2px 6px; border-radius: 4px;
