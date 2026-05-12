@@ -62,6 +62,31 @@ button.danger  { background: transparent; border-color: var(--danger); color: va
   font-size: 11px; font-variant-numeric: tabular-nums; color: var(--muted);
 }
 .tile img.stale { filter: grayscale(1) brightness(0.5); }
+.tile { user-select: none; }
+
+.zoom-modal { background: rgba(0,0,0,0.92); padding: 24px; }
+.zoom-modal img {
+  max-width: 100%; max-height: 100%; width: auto; height: auto;
+  object-fit: contain; display: block;
+  box-shadow: 0 6px 32px rgba(0,0,0,0.6);
+}
+.zoom-modal .zoom-name {
+  position: absolute; top: 18px; left: 24px;
+  background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 6px;
+  font-size: 14px;
+}
+.zoom-modal .zoom-stamp {
+  position: absolute; bottom: 18px; right: 24px;
+  background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 6px;
+  font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.zoom-close {
+  position: absolute; top: 14px; right: 18px;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(0,0,0,0.6); border: 1px solid var(--border); color: white;
+  font-size: 22px; line-height: 1; cursor: pointer;
+}
+.zoom-close:hover { background: var(--danger); border-color: var(--danger); }
 .tile .tools {
   position: absolute; top: 6px; right: 6px; display: none; gap: 4px;
 }
